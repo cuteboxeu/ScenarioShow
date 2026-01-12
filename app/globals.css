@@ -8,5 +8,7 @@ html, body {
     padding: 0;
 
     overflow-x: hidden;
+
     background: #0b0b0b;
+    color: #fff;
 }
