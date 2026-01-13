@@ -31,3 +31,14 @@ export function isCustomRoundFinished(state: ShowState): boolean {
     const r = state.currentRoundIndex;
     return state.players.every(p => p.currentScores[r] === p.plannedScores[r]);
 }
+
+export function isCurrentPlayerFinished(state: ShowState): boolean {
+    const r = state.currentRoundIndex;
+    const p = state.currentPlayerIndex;
+
+    if (r === null || p === null) return false;
+
+    const player = state.players[p];
+    return player.currentScores[r] === player.plannedScores[r];
+}
+

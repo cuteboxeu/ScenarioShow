@@ -1,6 +1,6 @@
 import { ShowState, Rng } from "./types/show.types";
-import { tickCustomScores, nextRound } from "./logic";
-import { isCustomRoundFinished } from "./selectors";
+import { tickCustomOneByOne, nextPlayer, nextRound } from "./logic";
+import { isCurrentPlayerFinished, isCustomRoundFinished } from "./selectors";
 import { ShowLoopHandlers, ShowLoopOptions, ShowLoopStatus } from "./types/loop.types";
 
 export class ShowLoop {
@@ -59,16 +59,25 @@ export class ShowLoop {
     private tick = () => {
         if (this.status !== "running") return;
 
-        const nextState = tickCustomScores(this.state, this.rng);
+        const nextState = tickCustomOneByOne(this.state, this.rng);
+        if (nextState !== this.state) {
+            this.state = nextState;
+            this.handlers.onTick(nextState);
+        }
 
-        this.state = nextState;
-        this.handlers.onTick(nextState);
+        if (isCurrentPlayerFinished(this.state)) {
+            const advancedPlayer = nextPlayer(this.state);
+            if (advancedPlayer !== this.state) {
+                this.state = advancedPlayer;
+                this.handlers.onTick(advancedPlayer);
+            }
+        }
 
-        if (isCustomRoundFinished(nextState)) {
-            this.handlers.onRoundFinished?.(nextState);
+        if (isCustomRoundFinished(this.state)) {
+            this.handlers.onRoundFinished?.(this.state);
 
             if (this.options.autoNextRound) {
-                const advanced = nextRound(nextState);
+                const advanced = nextRound(this.state);
                 this.state = advanced;
                 this.handlers.onTick(advanced);
 

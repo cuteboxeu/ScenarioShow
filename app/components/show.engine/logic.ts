@@ -3,7 +3,7 @@ import { createId } from "./id";
 import { canStartShow, recomputeStatus } from "./validate";
 
 export function setMode(state: ShowState, mode: ShowMode): ShowState {
-    if (state.status !== "setup") return state;
+    if (state.status !== "setup" && state.status !== "ready") return state;
 
     const reset: ShowState = {
         ...state,
@@ -21,7 +21,7 @@ export function setMode(state: ShowState, mode: ShowMode): ShowState {
 }
 
 export function addPlayer(state: ShowState, name: string, avatarUrl: string): ShowState {
-    if (state.status !== "setup") return state;
+    if (state.status !== "setup" && state.status !== "ready") return state;
 
     const roundsLen = state.rounds.length;
 
@@ -38,13 +38,13 @@ export function addPlayer(state: ShowState, name: string, avatarUrl: string): Sh
 }
 
 export function removePlayer(state: ShowState, playerId: string): ShowState {
-    if (state.status !== "setup") return state;
+    if (state.status !== "setup" && state.status !== "ready") return state;
     const next = { ...state, players: state.players.filter(p => p.id !== playerId) };
     return recomputeStatus(next);
 }
 
 export function renamePlayer(state: ShowState, playerId: string, name: string): ShowState {
-    if (state.status !== "setup") return state;
+    if (state.status !== "setup" && state.status !== "ready") return state;
 
     const next = {
         ...state,
@@ -55,7 +55,7 @@ export function renamePlayer(state: ShowState, playerId: string, name: string): 
 }
 
 export function addRound(state: ShowState): ShowState {
-    if (state.status !== "setup") return state;
+    if (state.status !== "setup" && state.status !== "ready") return state;
 
     const roundIndex = state.rounds.length;
 
@@ -76,7 +76,7 @@ export function addRound(state: ShowState): ShowState {
 }
 
 export function removeRound(state: ShowState, roundIndex: number): ShowState {
-    if (state.status !== "setup") return state;
+    if (state.status !== "setup" && state.status !== "ready") return state;
     if (roundIndex < 0 || roundIndex >= state.rounds.length) return state;
 
     const nextRounds = state.rounds
@@ -98,7 +98,7 @@ export function removeRound(state: ShowState, roundIndex: number): ShowState {
 }
 
 export function setPlannedScore(state: ShowState, playerId: string, roundIndex: number, score: number): ShowState {
-    if (state.status !== "setup") return state;
+    if (state.status !== "setup" && state.status !== "ready") return state;
     if (state.config.mode !== "custom") return state;
     if (roundIndex < 0 || roundIndex >= state.rounds.length) return state;
     if (!Number.isFinite(score) || score < 0) return state;
@@ -121,23 +121,25 @@ export function setPlannedScore(state: ShowState, playerId: string, roundIndex: 
 export function startShow(state: ShowState): ShowState {
     if (!canStartShow(state)) return state;
 
-    const next: ShowState = {
+    const resetPlayers = state.players.map(p => ({
+        ...p,
+        currentScores: p.currentScores.map(() => 0),
+    }));
+
+    return {
         ...state,
         status: "playing",
         currentRoundIndex: 0,
+        currentPlayerIndex: state.config.mode === "custom" ? 0 : null,
         rounds: state.rounds.map((r, i) => ({
             ...r,
             isActive: i === 0,
             isFinished: false,
         })),
-        players:
-            state.config.mode === "custom"
-                ? state.players.map(p => ({ ...p, currentScores: p.currentScores.map(() => 0) }))
-                : state.players,
+        players: resetPlayers,
     };
-
-    return next;
 }
+
 
 export function setScoreRandom(state: ShowState, playerId: string, score: number): ShowState {
     if (state.status !== "playing") return state;
@@ -204,6 +206,7 @@ export function nextRound(state: ShowState): ShowState {
             ...state,
             status: "finished",
             currentRoundIndex: null,
+            currentPlayerIndex: null,
             rounds: state.rounds.map(r => ({ ...r, isActive: false, isFinished: true })),
         };
     }
@@ -211,6 +214,7 @@ export function nextRound(state: ShowState): ShowState {
     return {
         ...state,
         currentRoundIndex: next,
+        currentPlayerIndex: state.config.mode === "custom" ? 0 : null,
         rounds: state.rounds.map((r, i) => ({
             ...r,
             isActive: i === next,
@@ -220,5 +224,70 @@ export function nextRound(state: ShowState): ShowState {
 }
 
 export function resetShow(state: ShowState): ShowState {
-    return { ...state, ...state, status: "setup" };
+    return {
+        ...state,
+        status: "setup",
+        currentRoundIndex: null,
+        currentPlayerIndex: null,
+        config: { ...state.config, roundsCount: state.rounds.length },
+        rounds: state.rounds.map((r, i) => ({
+            ...r,
+            index: i,
+            isActive: false,
+            isFinished: false,
+        })),
+        players: state.players.map(p => ({
+            ...p,
+            currentScores: state.rounds.map(() => 0),
+        })),
+    };
+}
+
+export function tickCustomOneByOne(state: ShowState, rng: Rng): ShowState {
+    if (state.status !== "playing") return state;
+    if (state.config.mode !== "custom") return state;
+    if (state.currentRoundIndex === null) return state;
+    if (state.currentPlayerIndex === null) return state;
+
+    const r = state.currentRoundIndex;
+    const pIndex = state.currentPlayerIndex;
+    const player = state.players[pIndex];
+
+    const current = player.currentScores[r];
+    const target = player.plannedScores[r];
+
+    const nextValue = calculateNextTowardsTarget(current, target, rng);
+    if (nextValue === current) return state;
+
+    return {
+        ...state,
+        players: state.players.map((p, i) =>
+            i === pIndex
+                ? {
+                    ...p,
+                    currentScores: p.currentScores.map((v, ri) =>
+                    ri === r ? nextValue : v
+                    ),
+                }
+                : p
+        ),
+    };
+}
+
+export function nextPlayer(state: ShowState): ShowState {
+    if (state.currentPlayerIndex === null) return state;
+
+    const next = state.currentPlayerIndex + 1;
+
+    if (next >= state.players.length) {
+        return {
+            ...state,
+            currentPlayerIndex: null,
+        };
+    }
+
+    return {
+        ...state,
+        currentPlayerIndex: next,
+    };
 }

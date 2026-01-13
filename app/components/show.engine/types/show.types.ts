@@ -28,6 +28,7 @@ export type ShowState = {
     players: Player[];
     rounds: Round[];
     currentRoundIndex: number | null;
+    currentPlayerIndex: number | null;
 };
 
 export type Rng = () => number;

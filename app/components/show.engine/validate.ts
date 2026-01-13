@@ -22,7 +22,7 @@ export function canStartShow(state: ShowState): boolean {
 }
 
 export function recomputeStatus(state: ShowState): ShowState {
-    if (state.status !== "setup") return state;
+    if (state.status !== "setup" && state.status !== "ready") return state;
 
     const ready =
         state.players.length >= 2 &&
@@ -35,5 +35,5 @@ export function recomputeStatus(state: ShowState): ShowState {
             state.config.mode !== "custom" ||
             state.players.every(p => p.plannedScores.every(n => Number.isFinite(n) && n >= 0)));
 
-    return ready ? { ...state, status: "ready" } : state;
+    return ready ? { ...state, status: "ready" } : { ...state, status: "setup" };
 }
