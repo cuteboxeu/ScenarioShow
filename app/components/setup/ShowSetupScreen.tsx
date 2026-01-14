@@ -1,27 +1,40 @@
 'use client';
 
 import { useTranslation } from "react-i18next";
-import { useShow } from "@/app/components/show.engine";
+import { ShowMode, ShowState } from "@/app/components/show.engine";
 import ModeSelector from "./ModeSelector";
 import ParticipantsList from "./ParticipantsList";
 import RoundsInput from "./RoundsInput";
 import CustomScoresTable from "./CustomScoresTable";
 
-const ShowSetupScreen = () => {
+interface ShowSetupScreenProps {
+    hydrated: boolean;
+    state: ShowState;
+    setMode: (mode: ShowMode) => void;
+    addPlayer: (name: string) => void;
+    removePlayer: (id: string) => void;
+    renamePlayer: (id: string, name: string) => void;
+    addRound: () => void;
+    removeRound: (index: number) => void;
+    setPlannedScore: (participantId: string, roundIndex: number, score: number) => void;
+    startShow: () => void;
+    setParticipantAvatar: (id: string, avatarUrl: string) => void;
+}
+
+const ShowSetupScreen = ({
+    hydrated,
+    state,
+    setMode,
+    addPlayer,
+    removePlayer,
+    renamePlayer,
+    addRound,
+    removeRound,
+    setPlannedScore,
+    startShow,
+    setParticipantAvatar,
+}: ShowSetupScreenProps) => {
     const { t } = useTranslation();
-    const {
-        hydrated,
-        state,
-        setMode,
-        addPlayer,
-        removePlayer,
-        renamePlayer,
-        addRound,
-        removeRound,
-        setPlannedScore,
-        startShow,
-        setParticipantAvatar,
-    } = useShow();
 
     if (!hydrated) return null;
     if (state.status !== "setup" && state.status !== "ready") return null;

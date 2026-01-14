@@ -2,6 +2,9 @@ import { ShowState, Player, Round, Rng, ShowMode } from "./types/show.types";
 import { createId } from "./id";
 import { canStartShow, recomputeStatus } from "./validate";
 
+const RANDOM_TICKS_PER_PLAYER = 8;
+const RANDOM_INCREMENT_MAX = 3;
+
 export function setMode(state: ShowState, mode: ShowMode): ShowState {
     if (state.status !== "setup" && state.status !== "ready") return state;
 
@@ -10,6 +13,7 @@ export function setMode(state: ShowState, mode: ShowMode): ShowState {
         config: { mode, roundsCount: 0 },
         rounds: [],
         currentRoundIndex: null,
+        randomPlayerTicksRemaining: null,
         players: state.players.map(p => ({
             ...p,
             plannedScores: [],
@@ -141,7 +145,9 @@ export function startShow(state: ShowState): ShowState {
         ...state,
         status: "playing",
         currentRoundIndex: 0,
-        currentPlayerIndex: state.config.mode === "custom" ? 0 : null,
+        currentPlayerIndex: state.config.mode === "custom" ? 0 : 0,
+        randomPlayerTicksRemaining:
+            state.config.mode === "random" ? RANDOM_TICKS_PER_PLAYER : null,
         rounds: state.rounds.map((r, i) => ({
             ...r,
             isActive: i === 0,
@@ -194,6 +200,62 @@ export function tickCustomScores(state: ShowState, rng: Rng): ShowState {
     return { ...state, players: nextPlayers };
 }
 
+export function tickRandomOneByOne(state: ShowState, rng: Rng): ShowState {
+    if (state.status !== "playing") return state;
+    if (state.config.mode !== "random") return state;
+    if (state.currentRoundIndex === null) return state;
+    if (state.currentPlayerIndex === null) return state;
+    const ticksRemaining = Number.isFinite(state.randomPlayerTicksRemaining)
+        ? state.randomPlayerTicksRemaining
+        : RANDOM_TICKS_PER_PLAYER;
+    if (ticksRemaining !== null && ticksRemaining <= 0) return state;
+
+    const r = state.currentRoundIndex;
+    const pIndex = state.currentPlayerIndex;
+    const player = state.players[pIndex];
+    if (!player) return state;
+
+    const current = player.currentScores[r] ?? 0;
+    const increment = Math.floor(rng() * (RANDOM_INCREMENT_MAX + 1));
+    const nextValue = current + increment;
+
+    const nextPlayers = state.players.map((p, i) =>
+        i === pIndex
+            ? {
+                ...p,
+                currentScores: p.currentScores.map((v, ri) =>
+                    ri === r ? nextValue : v
+                ),
+            }
+            : p
+    );
+
+    const nextTicks = ticksRemaining !== null ? ticksRemaining - 1 : 0;
+    if (nextTicks > 0) {
+        return {
+            ...state,
+            players: nextPlayers,
+            randomPlayerTicksRemaining: nextTicks,
+        };
+    }
+
+    const advanced = nextPlayer({ ...state, players: nextPlayers });
+    if (advanced.currentPlayerIndex !== null) {
+        return {
+            ...advanced,
+            randomPlayerTicksRemaining: RANDOM_TICKS_PER_PLAYER,
+        };
+    }
+
+    return {
+        ...advanced,
+        randomPlayerTicksRemaining: null,
+        rounds: state.rounds.map((round, index) =>
+            index === r ? { ...round, isActive: false, isFinished: true } : round
+        ),
+    };
+}
+
 export function calculateNextTowardsTarget(current: number, target: number, rng: Rng): number {
     if (current >= target) return target;
 
@@ -218,6 +280,7 @@ export function nextRound(state: ShowState): ShowState {
             status: "finished",
             currentRoundIndex: null,
             currentPlayerIndex: null,
+            randomPlayerTicksRemaining: null,
             rounds: state.rounds.map(r => ({ ...r, isActive: false, isFinished: true })),
         };
     }
@@ -225,7 +288,9 @@ export function nextRound(state: ShowState): ShowState {
     return {
         ...state,
         currentRoundIndex: next,
-        currentPlayerIndex: state.config.mode === "custom" ? 0 : null,
+        currentPlayerIndex: state.config.mode === "custom" ? 0 : 0,
+        randomPlayerTicksRemaining:
+            state.config.mode === "random" ? RANDOM_TICKS_PER_PLAYER : null,
         rounds: state.rounds.map((r, i) => ({
             ...r,
             isActive: i === next,
@@ -240,6 +305,7 @@ export function resetShow(state: ShowState): ShowState {
         status: "setup",
         currentRoundIndex: null,
         currentPlayerIndex: null,
+        randomPlayerTicksRemaining: null,
         config: { ...state.config, roundsCount: state.rounds.length },
         rounds: state.rounds.map((r, i) => ({
             ...r,
@@ -254,6 +320,36 @@ export function resetShow(state: ShowState): ShowState {
     };
 }
 
+export function resetShowPreserveParticipants(state: ShowState): ShowState {
+    return {
+        ...state,
+        status: "setup",
+        currentRoundIndex: null,
+        currentPlayerIndex: null,
+        randomPlayerTicksRemaining: null,
+        config: { ...state.config, roundsCount: 0 },
+        rounds: [],
+        players: state.players.map(p => ({
+            ...p,
+            plannedScores: [],
+            currentScores: [],
+        })),
+    };
+}
+
+export function finishShow(state: ShowState): ShowState {
+    if (state.status !== "playing") return state;
+
+    return {
+        ...state,
+        status: "finished",
+        currentRoundIndex: null,
+        currentPlayerIndex: null,
+        randomPlayerTicksRemaining: null,
+        rounds: state.rounds.map(r => ({ ...r, isActive: false, isFinished: true })),
+    };
+}
+
 export function tickCustomOneByOne(state: ShowState, rng: Rng): ShowState {
     if (state.status !== "playing") return state;
     if (state.config.mode !== "custom") return state;
@@ -263,6 +359,7 @@ export function tickCustomOneByOne(state: ShowState, rng: Rng): ShowState {
     const r = state.currentRoundIndex;
     const pIndex = state.currentPlayerIndex;
     const player = state.players[pIndex];
+    if (!player) return state;
 
     const current = player.currentScores[r];
     const target = player.plannedScores[r];

@@ -1,6 +1,6 @@
 import { ShowState, Rng } from "./types/show.types";
-import { tickCustomOneByOne, nextPlayer, nextRound } from "./logic";
-import { isCurrentPlayerFinished, isCustomRoundFinished } from "./selectors";
+import { tickCustomOneByOne, tickRandomOneByOne, nextPlayer, nextRound } from "./logic";
+import { isCurrentPlayerFinished, isCustomRoundFinished, isRandomRoundFinished } from "./selectors";
 import { ShowLoopHandlers, ShowLoopOptions, ShowLoopStatus } from "./types/loop.types";
 
 export class ShowLoop {
@@ -51,6 +51,15 @@ export class ShowLoop {
         this.schedule();
     }
 
+    setTickIntervalMs(ms: number) {
+        if (!Number.isFinite(ms) || ms <= 0) return;
+        this.options.tickIntervalMs = ms;
+        if (this.status === "running") {
+            this.clear();
+            this.schedule();
+        }
+    }
+
     stop() {
         this.clear();
         this.status = "stopped";
@@ -59,37 +68,67 @@ export class ShowLoop {
     private tick = () => {
         if (this.status !== "running") return;
 
-        const nextState = tickCustomOneByOne(this.state, this.rng);
-        if (nextState !== this.state) {
+        const prevState = this.state;
+        const prevCustomFinished = isCustomRoundFinished(prevState);
+        const prevRandomFinished = isRandomRoundFinished(prevState);
+
+        let nextState = prevState;
+        if (prevState.config.mode === "custom") {
+            nextState = tickCustomOneByOne(prevState, this.rng);
+        } else if (prevState.config.mode === "random") {
+            nextState = tickRandomOneByOne(prevState, this.rng);
+        }
+
+        if (nextState !== prevState) {
             this.state = nextState;
             this.handlers.onTick(nextState);
         }
 
-        if (isCurrentPlayerFinished(this.state)) {
-            const advancedPlayer = nextPlayer(this.state);
-            if (advancedPlayer !== this.state) {
-                this.state = advancedPlayer;
-                this.handlers.onTick(advancedPlayer);
+        if (this.state.config.mode === "custom") {
+            if (isCurrentPlayerFinished(this.state)) {
+                const advancedPlayer = nextPlayer(this.state);
+                if (advancedPlayer !== this.state) {
+                    this.state = advancedPlayer;
+                    this.handlers.onTick(advancedPlayer);
+                }
+            }
+
+            const nowCustomFinished = isCustomRoundFinished(this.state);
+            if (!prevCustomFinished && nowCustomFinished) {
+                this.handlers.onRoundFinished?.(this.state);
             }
         }
 
-        if (isCustomRoundFinished(this.state)) {
-            this.handlers.onRoundFinished?.(this.state);
-
-            if (this.options.autoNextRound) {
-                const advanced = nextRound(this.state);
-                this.state = advanced;
-                this.handlers.onTick(advanced);
-
-                if (advanced.status === "finished") {
-                    this.handlers.onShowFinished?.(advanced);
-                    this.stop();
-                    return;
+        if (this.state.config.mode === "random") {
+            const nowRandomFinished = isRandomRoundFinished(this.state);
+            if (!prevRandomFinished && nowRandomFinished) {
+                if (!this.options.autoNextRound) {
+                    this.pause();
+                    this.handlers.onRoundFinished?.(this.state);
+                } else {
+                    this.handlers.onRoundFinished?.(this.state);
+                    const advanced = nextRound(this.state);
+                    this.state = advanced;
+                    this.handlers.onTick(advanced);
                 }
             }
         }
 
-        this.schedule();
+        if (this.options.autoNextRound && isCustomRoundFinished(this.state)) {
+            const advanced = nextRound(this.state);
+            this.state = advanced;
+            this.handlers.onTick(advanced);
+
+            if (advanced.status === "finished") {
+                this.handlers.onShowFinished?.(advanced);
+                this.stop();
+                return;
+            }
+        }
+
+        if (this.status === "running") {
+            this.schedule();
+        }
     };
 
     private schedule() {

@@ -42,3 +42,11 @@ export function isCurrentPlayerFinished(state: ShowState): boolean {
     return player.currentScores[r] === player.plannedScores[r];
 }
 
+export function isRandomRoundFinished(state: ShowState): boolean {
+    if (state.status !== "playing") return false;
+    if (state.config.mode !== "random") return false;
+    if (state.currentRoundIndex === null) return false;
+    const round = state.rounds[state.currentRoundIndex];
+    return Boolean(round?.isFinished);
+}
+

@@ -1,9 +1,9 @@
 'use client';
 
-import ShowSetupScreen from "@/app/components/setup/ShowSetupScreen";
+import ShowScreen from "@/app/components/show/ShowScreen";
 
 const SettingsBoard = () => {
-    return <ShowSetupScreen />;
+    return <ShowScreen />;
 };
 
 export default SettingsBoard;

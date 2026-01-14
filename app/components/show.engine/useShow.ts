@@ -4,10 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
     addPlayer,
     addRound,
+    finishShow,
     nextRound,
     removePlayer,
     removeRound,
     renamePlayer,
+    resetShowPreserveParticipants,
     setPlayerAvatar,
     setMode,
     setPlannedScore,
@@ -18,6 +20,7 @@ import { initialShowState } from "./initial";
 import { defaultRng } from "./rng";
 import { ShowState, ShowMode } from "./types/show.types";
 import { ShowLoop } from "./loop";
+import { ShowLoopStatus } from "./types/loop.types";
 
 const STORAGE_KEY = "custom-show-show";
 const DEFAULT_TICK_INTERVAL_MS = 300;
@@ -25,12 +28,73 @@ const DEFAULT_TICK_INTERVAL_MS = 300;
 type PersistedShow = {
     state: ShowState;
     loop: {
-        status: "running" | "paused";
+        status: "running" | "paused" | "idle";
         tickIntervalMs: number;
     };
 };
 
 type PersistedLoop = PersistedShow["loop"];
+
+function isValidPersistedState(state: ShowState): boolean {
+    if (!state) return false;
+    if (state.config?.mode !== "custom" && state.config?.mode !== "random") return false;
+    if (!Number.isFinite(state.config?.roundsCount) || state.config.roundsCount < 0) return false;
+    if (!Array.isArray(state.rounds) || !Array.isArray(state.players)) return false;
+    if (state.rounds.length !== state.config.roundsCount) return false;
+
+    for (let i = 0; i < state.rounds.length; i += 1) {
+        const round = state.rounds[i];
+        if (!round || round.index !== i) return false;
+        if (typeof round.isActive !== "boolean" || typeof round.isFinished !== "boolean") return false;
+    }
+
+    for (const player of state.players) {
+        if (!player || typeof player.id !== "string") return false;
+        if (typeof player.name !== "string" || typeof player.avatarUrl !== "string") return false;
+        if (!Array.isArray(player.plannedScores) || !Array.isArray(player.currentScores)) return false;
+        if (player.plannedScores.length !== state.rounds.length) return false;
+        if (player.currentScores.length !== state.rounds.length) return false;
+        if (player.plannedScores.some(n => !Number.isFinite(n) || n < 0)) return false;
+        if (player.currentScores.some(n => !Number.isFinite(n) || n < 0)) return false;
+    }
+
+    if (
+        state.currentRoundIndex !== null &&
+        (!Number.isInteger(state.currentRoundIndex) ||
+            state.currentRoundIndex < 0 ||
+            state.currentRoundIndex >= state.rounds.length)
+    ) {
+        return false;
+    }
+
+    if (
+        state.currentPlayerIndex !== null &&
+        (!Number.isInteger(state.currentPlayerIndex) ||
+            state.currentPlayerIndex < 0 ||
+            state.currentPlayerIndex >= state.players.length)
+    ) {
+        return false;
+    }
+
+    if (
+        state.randomPlayerTicksRemaining !== null &&
+        (!Number.isFinite(state.randomPlayerTicksRemaining) || state.randomPlayerTicksRemaining < 0)
+    ) {
+        return false;
+    }
+
+    if (
+        (state.status === "setup" || state.status === "ready") &&
+        (state.currentRoundIndex !== null || state.currentPlayerIndex !== null)
+    ) {
+        return false;
+    }
+
+    if (state.status === "playing" && state.currentRoundIndex === null) return false;
+    if (state.status === "finished" && state.currentRoundIndex !== null) return false;
+
+    return true;
+}
 
 function readPersisted(): PersistedShow | null {
     if (typeof window === "undefined") return null;
@@ -42,11 +106,19 @@ function readPersisted(): PersistedShow | null {
             localStorage.removeItem(STORAGE_KEY);
             return null;
         }
+        if (!isValidPersistedState(parsed.state)) {
+            localStorage.removeItem(STORAGE_KEY);
+            return null;
+        }
         if (parsed.state.status === "finished") {
             localStorage.removeItem(STORAGE_KEY);
             return null;
         }
-        if (parsed.loop.status !== "running" && parsed.loop.status !== "paused") {
+        if (
+            parsed.loop.status !== "running" &&
+            parsed.loop.status !== "paused" &&
+            parsed.loop.status !== "idle"
+        ) {
             localStorage.removeItem(STORAGE_KEY);
             return null;
         }
@@ -65,6 +137,8 @@ export function useShow() {
     const initialPersistedRef = useRef<PersistedShow | null>(null);
     const [state, setState] = useState<ShowState>(initialShowState);
     const [hydrated, setHydrated] = useState(false);
+    const [loopStatus, setLoopStatus] = useState<ShowLoopStatus>("idle");
+    const [tickIntervalMs, setTickIntervalMs] = useState(DEFAULT_TICK_INTERVAL_MS);
     const loopRef = useRef<ShowLoop | null>(null);
     const allowPersistRef = useRef(false);
     const tickIntervalRef = useRef<number>(DEFAULT_TICK_INTERVAL_MS);
@@ -72,7 +146,7 @@ export function useShow() {
     const getPersistedLoop = useCallback((): PersistedLoop => {
         const status = loopRef.current?.getStatus();
         return {
-            status: status === "running" ? "running" : "paused",
+            status: status === "running" ? "running" : status === "paused" ? "paused" : "idle",
             tickIntervalMs: tickIntervalRef.current,
         };
     }, []);
@@ -106,7 +180,7 @@ export function useShow() {
             const loop = new ShowLoop(
                 seedState,
                 defaultRng,
-                { tickIntervalMs, autoNextRound: true },
+                { tickIntervalMs, autoNextRound: false },
                 {
                     onTick: (nextState) => {
                         setState(nextState);
@@ -114,15 +188,21 @@ export function useShow() {
                     },
                     onRoundFinished: (nextState) => {
                         persistState(nextState);
+                        const status = loopRef.current?.getStatus();
+                        if (status) {
+                            setLoopStatus(status);
+                        }
                     },
                     onShowFinished: (nextState) => {
                         setState(nextState);
                         persistState(nextState);
+                        setLoopStatus("stopped");
                         stopLoop();
                     },
                 }
             );
             loopRef.current = loop;
+            setLoopStatus(loop.getStatus());
             return loop;
         },
         [persistState, stopLoop]
@@ -133,9 +213,11 @@ export function useShow() {
         initialPersistedRef.current = persisted;
         if (persisted) {
             tickIntervalRef.current = persisted.loop.tickIntervalMs;
+            setTickIntervalMs(persisted.loop.tickIntervalMs);
             setState(persisted.state);
         } else {
             tickIntervalRef.current = DEFAULT_TICK_INTERVAL_MS;
+            setTickIntervalMs(DEFAULT_TICK_INTERVAL_MS);
         }
         allowPersistRef.current = true;
         setHydrated(true);
@@ -145,14 +227,18 @@ export function useShow() {
         if (!hydrated) return;
         const persisted = initialPersistedRef.current;
         if (!persisted) return;
-        if (
-            persisted.state.status === "playing" &&
-            persisted.state.config.mode === "custom"
-        ) {
+        if (persisted.state.status === "playing") {
             const loop = createLoop(persisted.state, persisted.loop);
             loop.syncState(persisted.state);
             if (persisted.loop.status === "running") {
                 loop.start();
+                setLoopStatus(loop.getStatus());
+            }
+            if (persisted.loop.status === "paused") {
+                setLoopStatus("paused");
+            }
+            if (persisted.loop.status === "idle") {
+                setLoopStatus("idle");
             }
         }
     }, [createLoop, hydrated]);
@@ -162,6 +248,7 @@ export function useShow() {
         loopRef.current.syncState(state);
         if (state.status !== "playing") {
             stopLoop();
+            setLoopStatus("stopped");
         }
     }, [state, stopLoop]);
 
@@ -247,13 +334,11 @@ export function useShow() {
         const nextState = startShow(state);
         if (nextState === state) return;
         updateState(nextState);
-        if (nextState.status === "playing" && nextState.config.mode === "custom") {
-            const loop = createLoop(nextState);
-            loop.syncState(nextState);
-            loop.start();
+        if (nextState.status === "playing") {
             persistState(nextState);
+            setLoopStatus("idle");
         }
-    }, [createLoop, persistState, state, updateState]);
+    }, [persistState, state, updateState]);
 
     const setScoreRandomHandler = useCallback(
         (playerId: string, score: number) => {
@@ -267,19 +352,30 @@ export function useShow() {
         updateState(nextState);
         if (nextState.status !== "playing") {
             stopLoop();
+            setLoopStatus("stopped");
+            return;
         }
-    }, [state, stopLoop, updateState]);
+        const loop = createLoop(nextState);
+        loop.syncState(nextState);
+        if (loop.getStatus() === "paused") {
+            loop.resume();
+        } else {
+            loop.start();
+        }
+        setLoopStatus(loop.getStatus());
+    }, [createLoop, state, stopLoop, updateState]);
 
     const pauseShow = useCallback(() => {
         if (loopRef.current) {
             loopRef.current.pause();
+            setLoopStatus(loopRef.current.getStatus());
         }
         allowPersistRef.current = true;
         persistState(state);
     }, [persistState, state]);
 
     const resumeShow = useCallback(() => {
-        if (state.status !== "playing" || state.config.mode !== "custom") return;
+        if (state.status !== "playing") return;
         const loop = createLoop(state);
         loop.syncState(state);
         if (loop.getStatus() === "paused") {
@@ -287,29 +383,54 @@ export function useShow() {
         } else {
             loop.start();
         }
+        setLoopStatus(loop.getStatus());
         allowPersistRef.current = true;
         persistState(state);
     }, [createLoop, persistState, state]);
 
     const stopShow = useCallback(() => {
         stopLoop();
+        setLoopStatus("stopped");
         allowPersistRef.current = true;
         persistState(state);
     }, [persistState, state, stopLoop]);
 
+    const finishShowHandler = useCallback(() => {
+        if (state.status !== "playing") return;
+        stopLoop();
+        setLoopStatus("stopped");
+        updateState(finishShow(state));
+    }, [state, stopLoop, updateState]);
+
     const resetShowHandler = useCallback(() => {
         stopLoop();
-        if (typeof window !== "undefined") {
-            localStorage.removeItem(STORAGE_KEY);
-        }
         tickIntervalRef.current = DEFAULT_TICK_INTERVAL_MS;
-        allowPersistRef.current = false;
-        setState(initialShowState);
-    }, [stopLoop]);
+        setTickIntervalMs(DEFAULT_TICK_INTERVAL_MS);
+        const nextState = resetShowPreserveParticipants(state);
+        updateState(nextState);
+        setLoopStatus("idle");
+    }, [resetShowPreserveParticipants, state, stopLoop, updateState]);
+
+    const setShowSpeedHandler = useCallback(
+        (ms: number) => {
+            if (!Number.isFinite(ms) || ms <= 0) return;
+            tickIntervalRef.current = ms;
+            setTickIntervalMs(ms);
+            if (loopRef.current) {
+                loopRef.current.setTickIntervalMs(ms);
+                setLoopStatus(loopRef.current.getStatus());
+            }
+            allowPersistRef.current = true;
+            persistState(state);
+        },
+        [persistState, state]
+    );
 
     return {
         hydrated,
         state,
+        loopStatus,
+        tickIntervalMs,
         setMode: setModeHandler,
         addPlayer: addPlayerHandler,
         removePlayer: removePlayerHandler,
@@ -324,6 +445,8 @@ export function useShow() {
         pauseShow,
         resumeShow,
         stopShow,
+        finishShow: finishShowHandler,
         resetShow: resetShowHandler,
+        setShowSpeed: setShowSpeedHandler,
     };
 }

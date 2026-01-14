@@ -10,4 +10,5 @@ export const initialShowState: ShowState = {
   rounds: [],
   currentRoundIndex: null,
   currentPlayerIndex: null,
+  randomPlayerTicksRemaining: null,
 };
