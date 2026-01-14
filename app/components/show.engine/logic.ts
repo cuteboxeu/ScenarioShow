@@ -37,6 +37,17 @@ export function addPlayer(state: ShowState, name: string, avatarUrl: string): Sh
     return recomputeStatus(next);
 }
 
+export function setPlayerAvatar(state: ShowState, playerId: string, avatarUrl: string): ShowState {
+    if (state.status !== "setup" && state.status !== "ready") return state;
+
+    const next = {
+        ...state,
+        players: state.players.map(p => (p.id === playerId ? { ...p, avatarUrl } : p)),
+    };
+
+    return recomputeStatus(next);
+}
+
 export function removePlayer(state: ShowState, playerId: string): ShowState {
     if (state.status !== "setup" && state.status !== "ready") return state;
     const next = { ...state, players: state.players.filter(p => p.id !== playerId) };

@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslation } from "react-i18next";
+
 export type Mode = "custom" | "random";
 
 interface ModeSliderProps {
@@ -9,10 +11,13 @@ interface ModeSliderProps {
     className?: string;
 }
 
-const ModeSlider = ({ mode, onChange, label = "Mode:", className = "" }: ModeSliderProps) => {
+const ModeSlider = ({ mode, onChange, label, className = "" }: ModeSliderProps) => {
+    const { t } = useTranslation();
+    const resolvedLabel = label ?? t("mode.label");
+
     return (
         <div className={`flex items-center gap-4 max-w-[300px] w-full ${className}`}>
-            <p className="text-zinc-300 shrink-0">{label}</p>
+            {resolvedLabel ? <p className="text-zinc-300 shrink-0">{resolvedLabel}</p> : null}
 
             <div className="relative flex items-center bg-zinc-800/70 rounded-full w-full h-12 p-1 overflow-hidden">
 
@@ -33,7 +38,7 @@ const ModeSlider = ({ mode, onChange, label = "Mode:", className = "" }: ModeSli
                         ${mode === "custom" ? "text-zinc-900" : "text-zinc-400"}
                     `}
                 >
-                    Custom
+                    {t("mode.custom")}
                 </button>
 
                 <button
@@ -43,7 +48,7 @@ const ModeSlider = ({ mode, onChange, label = "Mode:", className = "" }: ModeSli
                         ${mode === "random" ? "text-zinc-900" : "text-zinc-400"}
                     `}
                 >
-                    Random
+                    {t("mode.random")}
                 </button>
             </div>
         </div>

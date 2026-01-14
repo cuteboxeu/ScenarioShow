@@ -8,6 +8,7 @@ import {
     removePlayer,
     removeRound,
     renamePlayer,
+    setPlayerAvatar,
     setMode,
     setPlannedScore,
     setScoreRandom,
@@ -62,16 +63,11 @@ function readPersisted(): PersistedShow | null {
 
 export function useShow() {
     const initialPersistedRef = useRef<PersistedShow | null>(null);
-    const [state, setState] = useState<ShowState>(() => {
-        const persisted = readPersisted();
-        initialPersistedRef.current = persisted;
-        return persisted?.state ?? initialShowState;
-    });
+    const [state, setState] = useState<ShowState>(initialShowState);
+    const [hydrated, setHydrated] = useState(false);
     const loopRef = useRef<ShowLoop | null>(null);
-    const allowPersistRef = useRef(true);
-    const tickIntervalRef = useRef<number>(
-        initialPersistedRef.current?.loop.tickIntervalMs ?? DEFAULT_TICK_INTERVAL_MS
-    );
+    const allowPersistRef = useRef(false);
+    const tickIntervalRef = useRef<number>(DEFAULT_TICK_INTERVAL_MS);
 
     const getPersistedLoop = useCallback((): PersistedLoop => {
         const status = loopRef.current?.getStatus();
@@ -133,9 +129,22 @@ export function useShow() {
     );
 
     useEffect(() => {
+        const persisted = readPersisted();
+        initialPersistedRef.current = persisted;
+        if (persisted) {
+            tickIntervalRef.current = persisted.loop.tickIntervalMs;
+            setState(persisted.state);
+        } else {
+            tickIntervalRef.current = DEFAULT_TICK_INTERVAL_MS;
+        }
+        allowPersistRef.current = true;
+        setHydrated(true);
+    }, []);
+
+    useEffect(() => {
+        if (!hydrated) return;
         const persisted = initialPersistedRef.current;
         if (!persisted) return;
-        tickIntervalRef.current = persisted.loop.tickIntervalMs;
         if (
             persisted.state.status === "playing" &&
             persisted.state.config.mode === "custom"
@@ -146,7 +155,7 @@ export function useShow() {
                 loop.start();
             }
         }
-    }, [createLoop]);
+    }, [createLoop, hydrated]);
 
     useEffect(() => {
         if (!loopRef.current) return;
@@ -205,6 +214,13 @@ export function useShow() {
     const renamePlayerHandler = useCallback(
         (id: string, name: string) => {
             updateState(renamePlayer(state, id, name));
+        },
+        [state, updateState]
+    );
+
+    const setParticipantAvatarHandler = useCallback(
+        (id: string, avatarUrl: string) => {
+            updateState(setPlayerAvatar(state, id, avatarUrl));
         },
         [state, updateState]
     );
@@ -292,11 +308,13 @@ export function useShow() {
     }, [stopLoop]);
 
     return {
+        hydrated,
         state,
         setMode: setModeHandler,
         addPlayer: addPlayerHandler,
         removePlayer: removePlayerHandler,
         renamePlayer: renamePlayerHandler,
+        setParticipantAvatar: setParticipantAvatarHandler,
         addRound: addRoundHandler,
         removeRound: removeRoundHandler,
         setPlannedScore: setPlannedScoreHandler,
