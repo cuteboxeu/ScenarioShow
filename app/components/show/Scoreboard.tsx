@@ -105,10 +105,9 @@ const Scoreboard = ({
                 </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-[36px_1fr_80px_80px] gap-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 sm:grid-cols-[48px_1fr_100px_100px]">
+            <div className="mt-4 grid grid-cols-[36px_1fr_155px] gap-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 sm:grid-cols-[48px_1fr_185px]">
                 <div>{t("scoreboard.rank")}</div>
                 <div>{t("scoreboard.participant")}</div>
-                <div className="text-right">{t("scoreboard.round")}</div>
                 <div className="text-right">{t("scoreboard.total")}</div>
             </div>
 
