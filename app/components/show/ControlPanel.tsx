@@ -150,34 +150,32 @@ const ControlPanel = ({
                         </div>
                     </section>
 
-                    {state.status !== "finished" && (
-                        <section className="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 p-4">
-                            <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                                {t("control.speedControl")}
+                    <section className="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 p-4">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                            {t("control.speedControl")}
+                        </div>
+                        <div className="mt-3">
+                            <input
+                                type="range"
+                                min={120}
+                                max={800}
+                                step={20}
+                                defaultValue={620}
+                                onChange={(event) => {
+                                    const min = 120;
+                                    const max = 800;
+                                    const value = Number(event.currentTarget.value);
+                                    const inverted = max - (value - min);
+                                    setShowSpeed?.(inverted);
+                                }}
+                                className="w-full accent-amber-400"
+                            />
+                            <div className="mt-2 flex items-center justify-between text-xs text-zinc-500">
+                                <span>{t("control.slower")}</span>
+                                <span>{t("control.faster")}</span>
                             </div>
-                            <div className="mt-3">
-                                <input
-                                    type="range"
-                                    min={120}
-                                    max={800}
-                                    step={20}
-                                    defaultValue={620}
-                                    onChange={(event) => {
-                                        const min = 120;
-                                        const max = 800;
-                                        const value = Number(event.currentTarget.value);
-                                        const inverted = max - (value - min);
-                                        setShowSpeed?.(inverted);
-                                    }}
-                                    className="w-full accent-amber-400"
-                                />
-                                <div className="mt-2 flex items-center justify-between text-xs text-zinc-500">
-                                    <span>{t("control.slower")}</span>
-                                    <span>{t("control.faster")}</span>
-                                </div>
-                            </div>
-                        </section>
-                    )}
+                        </div>
+                    </section>
 
                     {activePlayer && (
                         <section className="rounded-2xl border border-zinc-800/80 bg-zinc-950/40 p-4">
